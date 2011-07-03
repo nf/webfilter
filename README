@@ -1,0 +1,18 @@
+Webfilter is a system for dynamically maintaining access control lists for
+the Squid proxy server.
+
+It allows the administrator to block access to certain web sites,
+and open them for specified periods of time.
+
+To set up:
+
+1. Run filter-master as a daemon (it'll start an HTTP server on port 5001).
+
+2. In your squid.conf file add the filter-helper and set up some access rules:
+
+	external_acl_type webfilter ttl=60 %DST /path/to/filter-helper
+	acl webfilter external webfilter
+	http_access allow webfilter
+	http_access deny all
+
+Andrew Gerrand <nf@wh3rd.net>
