@@ -1,0 +1,24 @@
+#!/bin/sh
+#
+# PROVIDE: webfilter
+
+# Add the following lines to /etc/rc.conf to enable webfilter:
+# webfilter_enable="YES"
+# webfilter_flags="<set as needed>"
+
+. /etc/rc.subr
+
+name="webfilter"
+rcvar=`set_rcvar`
+
+load_rc_config $name
+
+: ${webfilter_enable="NO"}
+: ${webfilter_flags=""}
+: ${webfilter_pidfile="/var/run/webfilter.pid"}
+
+pidfile="${webfilter_pidfile}"
+command="/usr/sbin/daemon"
+command_args="-p ${webfilter_pidfile} /usr/local/sbin/filter-master ${webfilter_flags}"
+
+run_rc_command "$1"
