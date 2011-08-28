@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"http"
+	"json"
 	"log"
 	"os"
 	"rpc"
@@ -13,7 +14,40 @@ import (
 	"time"
 )
 
-var listenAddr = flag.String("addr", ":5001", "HTTP/RPC listen address")
+var (
+	listenAddr = flag.String("addr", ":5001", "HTTP/RPC listen address")
+	logFile    = flag.String("log", "/var/log/webfilter.log",
+		"log file path")
+	configFile = flag.String("config", "/usr/local/etc/webfilter.conf",
+		"configuration file")
+)
+
+func main() {
+	flag.Parse()
+
+	// Log to the specified file.
+	f, err := os.OpenFile(*logFile, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0644)
+	if err != nil {
+		log.Fatal(err)
+	}
+	log.SetOutput(f)
+
+	// Set up RPC and HTTP servers.
+	m := &Master{}
+	m.loadConfig()
+	rpc.RegisterName("Master", RPCMaster{m})
+	rpc.HandleHTTP()
+	http.Handle("/admin/", m)
+	log.Fatal(http.ListenAndServe(*listenAddr, nil))
+}
+
+type RPCMaster struct {
+	m *Master
+}
+
+func (m RPCMaster) Validate(b []byte, ok *bool) os.Error {
+	return m.m.Validate(b, ok)
+}
 
 type Host struct {
 	Suffix    string
@@ -52,33 +86,62 @@ func (m *Master) Validate(b []byte, ok *bool) os.Error {
 	return nil
 }
 
-func (m *Master) Add(suffix string) {
+func (m *Master) add(suffix string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.Hosts = append(m.Hosts, &Host{Suffix: suffix})
+	m.saveConfig()
 }
 
-func (m *Master) Open(suffix string, mins int) {
+func (m *Master) open(suffix string, mins int) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for _, h := range m.Hosts {
 		if h.Suffix == suffix {
 			log.Println("open", h.Suffix)
 			h.CloseTime = time.Nanoseconds() + int64(mins)*60e9
+			m.saveConfig()
 			return
 		}
 	}
 }
 
-func (m *Master) Close(suffix string) {
+func (m *Master) close(suffix string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for _, h := range m.Hosts {
 		if h.Suffix == suffix {
 			log.Println("close", h.Suffix)
 			h.CloseTime = 0
+			m.saveConfig()
 			return
 		}
+	}
+}
+
+func (m *Master) saveConfig() {
+	f, err := os.Create(*configFile)
+	if err != nil {
+		log.Println(err)
+		return
+	}
+	defer f.Close()
+	err = json.NewEncoder(f).Encode(m.Hosts)
+	if err != nil {
+		log.Println(err)
+	}
+}
+
+func (m *Master) loadConfig() {
+	f, err := os.Open(*configFile)
+	if err != nil {
+		log.Println(err)
+		return
+	}
+	defer f.Close()
+	err = json.NewDecoder(f).Decode(&m.Hosts)
+	if err != nil {
+		log.Println(err)
 	}
 }
 
@@ -96,36 +159,20 @@ func (m *Master) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	case "/add":
-		m.Add(s)
+		m.add(s)
 	case "/open":
 		mins, err := strconv.Atoi(r.FormValue("mins"))
 		if err != nil {
 			http.Error(w, err.String(), 300)
 		}
-		m.Open(s, mins)
+		m.open(s, mins)
 	case "/close":
-		m.Close(s)
+		m.close(s)
 	default:
 		http.Error(w, "not found", 404)
 		return
 	}
 	http.Redirect(w, r, "/admin/", http.StatusFound)
-}
-
-type RPCMaster struct {
-	m *Master
-}
-
-func (m RPCMaster) Validate(b []byte, ok *bool) os.Error {
-	return m.m.Validate(b, ok)
-}
-
-func main() {
-	m := &Master{}
-	rpc.RegisterName("Master", RPCMaster{m})
-	rpc.HandleHTTP()
-	http.Handle("/admin/", m)
-	log.Fatal(http.ListenAndServe(*listenAddr, nil))
 }
 
 const html = `
