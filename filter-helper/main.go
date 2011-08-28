@@ -2,15 +2,17 @@ package main
 
 import (
 	"bufio"
+	"flag"
 	"log"
 	"os"
 	"rpc"
 )
 
-const masterAddr = "127.0.0.1:5001"
+var masterAddr = flag.String("master", "127.0.0.1:5001", "master server address")
 
 func main() {
-	client, err := rpc.DialHTTP("tcp", masterAddr)
+	flag.Parse()
+	client, err := rpc.DialHTTP("tcp", *masterAddr)
 	if err != nil {
 		log.Fatal("Dial:", err)
 	}
