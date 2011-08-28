@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"http"
 	"log"
 	"os"
@@ -12,7 +13,7 @@ import (
 	"time"
 )
 
-const listenAddr = ":5001"
+var listenAddr = flag.String("addr", ":5001", "HTTP/RPC listen address")
 
 type Host struct {
 	Suffix    string
@@ -111,12 +112,20 @@ func (m *Master) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/admin/", http.StatusFound)
 }
 
+type RPCMaster struct {
+	m *Master
+}
+
+func (m RPCMaster) Validate(b []byte, ok *bool) os.Error {
+	return m.m.Validate(b, ok)
+}
+
 func main() {
 	m := &Master{}
-	rpc.Register(m)
+	rpc.RegisterName("Master", RPCMaster{m})
 	rpc.HandleHTTP()
 	http.Handle("/admin/", m)
-	log.Fatal(http.ListenAndServe(listenAddr, nil))
+	log.Fatal(http.ListenAndServe(*listenAddr, nil))
 }
 
 const html = `
